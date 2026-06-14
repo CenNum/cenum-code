@@ -1,6 +1,6 @@
 # Cenum Code
 
-智能终端 AI 编程助手——借鉴 Claude Code 架构，基于 Bun + TypeScript + React/Ink 实现。在终端中与 AI 对话，自动操作文件系统、执行命令、搜索代码。
+智能终端 AI 编程助手，基于 Bun + TypeScript + React/Ink 实现。在终端中与 AI 对话，自动操作文件系统、执行命令、搜索代码。
 
 [![Bun](https://img.shields.io/badge/runtime-Bun-f9f1e1)](https://bun.sh)
 [![TypeScript](https://img.shields.io/badge/lang-TypeScript-3178c6)](https://www.typescriptlang.org/)
