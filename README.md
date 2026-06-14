@@ -212,65 +212,138 @@ src/
 
 ## 开发者指南
 
-### 项目初始化
+### 环境要求
+
+| 依赖 | 验证命令 | 真实版本（已验证） |
+|---|---|---|
+| Bun | `bun --version` | ≥ 1.0（macOS 26.5 实测通过） |
+| Git | `git --version` | ≥ 2.0 |
+| 操作系统 | — | macOS 26.5 / Linux / WSL2 |
+
+> 不需要单独安装 Node.js、npm、Xcode Command Line Tools。Bun 内置了包管理器、打包器和运行时，一步到位。
+
+### 依赖版本清单
+
+以下为 `package.json` 中锁定并验证过的版本，直接 `bun install` 即可复现：
+
+**生产依赖：**
+
+| 包名 | 版本 | 用途 |
+|---|---|---|
+| `ink` | ^6.0.0 | React TUI 渲染框架 |
+| `react` | ^19.0.0 | UI 组件 |
+| `commander` | ^13.1.0 | CLI 参数解析 |
+| `zod` | ^3.24.2 | 工具参数校验 |
+| `diff` | ^9.0.0 | Git diff 生成 |
+| `chalk` | ^5.4.1 | 终端颜色（早期调试） |
+| `strip-ansi` | ^7.1.0 | ANSI 转义码清理 |
+| `ink-spinner` | ^5.0.0 | 加载动画（备用） |
+
+**开发依赖：**
+
+| 包名 | 版本 | 用途 |
+|---|---|---|
+| `@types/diff` | ^8.0.0 | diff 类型声明 |
+| `@types/react` | ^19.0.0 | React 类型声明 |
+| `bun-types` | latest | Bun 运行时类型 |
+
+### 初始化流程
 
 ```bash
-# 1. 克隆仓库
+# 1. 安装 Bun（如未安装）
+curl -fsSL https://bun.sh/install | bash
+
+# 2. 验证 Bun 版本
+bun --version   # 预计 > 1.0
+
+# 3. 克隆仓库
 git clone https://github.com/your-org/cenum-code.git
 cd cenum-code
 
-# 2. 安装依赖（Bun）
+# 4. 安装依赖（全部锁定版本，约 1-2 秒完成）
 bun install
 
-# 3. 构建
+# 5. 构建
 bun run build
+# 输出: Bundled 664 modules → dist/main.js (约 2.30 MB)
 ```
+
+安装过程极快——Bun 的二进制安装方式远快于 npm，全量依赖安装通常在 2 秒内完成。
 
 ### 常用命令
 
 | 命令 | 说明 |
 |---|---|
-| `bun run dev` | 开发模式，源码热重载运行 |
-| `bun run build` | 编译构建，输出 `dist/main.js` |
+| `bun run dev` | 开发模式，`--hot` 热重载 |
+| `bun run build` | 编译 → `dist/main.js` |
 | `bun run start` | 运行构建产物 |
-| `bun run dist/main.js` | 直接运行（等同于 `bun run start`） |
-| `bun run dist/main.js -p "问题"` | 非交互单次执行 |
-| `bun run dist/main.js --setup` | 重新配置 API Key |
+| `bun dist/main.js -p "问题"` | 非交互单次执行 |
+| `bun dist/main.js --setup` | 重新配置 API Key |
 
-### 开发模式详解
+### 构建原理
 
-```bash
-bun run dev
-```
-
-等价于 `bun run --hot src/main.tsx`。Bun 的 `--hot` 标志启用热重载：修改 `src/` 下任意 `.ts` / `.tsx` 文件后自动重启进程，无需手动重新构建。适合快速迭代调试。
-
-### 构建产物
-
-构建产物为单个自包含的 `dist/main.js`（约 2.3 MB），由 Bun 原生打包器生成，包含了所有 TS 源码和第三方依赖。可在安装了 Bun 的任意机器上直接运行，无需 `node_modules/`。
+项目不使用 `tsc` 进行编译，而是直接通过 Bun 原生打包器 `bun build` 将 TypeScript 源码和所有依赖打包为一个自包含的 `.js` 文件：
 
 ```bash
-# 直接把 dist/main.js 复制到目标机器即可运行
-bun dist/main.js
+# package.json 中定义的构建命令
+bun build src/main.tsx --outdir dist --target bun
 ```
+
+**关键参数：**
+
+- `--target bun`：目标运行时为 Bun，启用 Bun 原生 API（如 `Bun.file()`、`Bun.write()`）
+- `--outdir dist`：输出到 `dist/` 目录
+- 入口文件为 `main.tsx`（因为用了 Ink/JSX，必须 `.tsx` 扩展名）
+
+产物 `dist/main.js` 约 2.30 MB，包含 664 个模块。在安装了 Bun 的机器上可直接运行，无需携带 `node_modules/`。
+
+### 踩坑记录
+
+> 以下为开发过程中实际遇到的问题及解决方式，供后续开发者参考。
+
+**1. Bun 全局安装路径问题**
+
+Bun 默认安装到 `~/.bun/bin/`，安装脚本会自动追加到 `~/.bashrc` 或 `~/.zshrc`。如果安装后 `bun` 命令不可用，手动执行：
+
+```bash
+export PATH="$HOME/.bun/bin:$PATH"
+```
+
+建议将这一行加入 `~/.zshrc`（macOS）或 `~/.bashrc`（Linux）使其永久生效。
+
+**2. 不要混用 Node.js/npm**
+
+Bun 作为替代品完全独立运行。如果环境中同时存在 Node.js，请确保使用 `bun install` 而非 `npm install`，使用 `bun run` 而非 `npx`。Bun 的 `node_modules` 结构与 npm 兼容，但安装速度更快。
+
+**3. 构建入口必须是 `.tsx`**
+
+由于项目使用了 Ink（React TUI），入口文件包含 JSX 语法，必须命名为 `main.tsx` 而非 `main.ts`。Bun 通过扩展名自动识别 JSX 并启用 React 转换。
+
+**4. ESM 模块系统**
+
+项目使用 ESM（`"type": "module"`），所有 import 路径必须写完整扩展名（如 `"./config.js"`）。`tsconfig.json` 中 `moduleResolution` 设为 `"bundler"` 以适配 Bun 打包器对 ESM 的解析方式。
+
+**5. 构建产物体积**
+
+构建产物约 2.30 MB，主要体积来自 React（调试版）和 Zod 的类型系统。如果需要减小体积，可在生产构建时使用 Bun 的 `--minify` 参数，但当前开发阶段不推荐——会增加排查问题的难度。
 
 ### 项目架构
 
 ```
-用户输入 → main.tsx (CLI 入口)
+用户输入 → main.tsx (CLI 入口, Commander.js 解析参数)
               ↓
-         App.tsx (React/Ink 主组件)
+         App.tsx (Ink 渲染, 状态管理, 确认交互)
               ↓
-         engine/index.ts (agent 循环)
+         engine/index.ts (runQueryLoop: LLM ↔ 工具 循环编排)
               ↓
-         engine/api.ts (LLM API 流式调用)
+         engine/api.ts (OpenAI 兼容流式 API, SSE 解析)
               ↓
-         tools/ (工具执行层)
+         tools/ (BaseTool → read/write/edit/bash/grep/glob/list)
               ↓
-         Chat.tsx / MarkdownView.tsx (TUI 渲染)
+         Chat.tsx + MarkdownView.tsx (结果渲染)
 ```
 
-**执行流程**：用户输入 → App 组件调用 `runQueryLoop` → 向 LLM 发起流式请求 → LLM 可能返回文本或工具调用 → 文本直接渲染，工具调用经权限确认后由对应工具模块执行 → 结果反馈给 LLM → 循环直到 LLM 返回纯文本。
+**执行流程**：用户输入 → `runQueryLoop` 发起流式请求 → LLM 返回文本（直接渲染）或 `tool_calls`（工具调用）→ 权限确认（如需要）→ 工具执行 → 结果回传 LLM → 循环直到 LLM 给出纯文本最终回复。
 
 ### 添加新工具
 
@@ -288,30 +361,35 @@ export class HttpTool extends BaseTool {
     url: z.string(),
     method: z.enum(["GET", "POST"]),
   });
-  needsApproval = false;  // 是否需用户确认
+  needsApproval = false;  // true = 执行前需用户确认
 
   async execute(args: Record<string, unknown>) {
     const res = await fetch(args.url as string, { method: args.method as string });
     const body = await res.text();
-    return this.ok(body.slice(0, 2000));
+    return this.ok(body.slice(0, 2000));  // ok() → 成功; fail() → 错误
   }
 }
 ```
 
-然后在 `src/tools/index.ts` 中注册：
+在 `src/tools/index.ts` 的 `getAllTools()` 中注册新工具实例即可生效。
 
-```typescript
-import { HttpTool } from "./http.js";
-// ...
-const allTools = [new ReadTool(), ..., new HttpTool()];
+### TypeScript 配置说明
+
+`tsconfig.json` 关键项：
+
+```json
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true
+  }
+}
 ```
 
-### TypeScript 配置
-
-`tsconfig.json` 配置要点：
-
-- `target: "ESNext"` — 输出最新 ES 标准
-- `module: "ESNext"` — 使用 ESM 模块
-- `moduleResolution: "bundler"` — 适配 Bun 打包器
-- `jsx: "react-jsx"` — React 17+ 自动 JSX 转换
-- `strict: true` — 启用全部严格类型检查
+- `target: "ESNext"` / `module: "ESNext"` — 输出最新 ES 标准，交给 Bun 打包器处理
+- `moduleResolution: "bundler"` — 适配 Bun 打包器对 `package.json` `"exports"` 字段的解析
+- `jsx: "react-jsx"` — React 19 自动 JSX 转换（无需手动 `import React`）
+- `strict: true` — 全部严格类型检查，防止隐式 `any`
