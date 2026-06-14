@@ -17,22 +17,56 @@
 
 ## 安装
 
-### 前置条件
+### 编译环境依赖
 
-需要 [Bun](https://bun.sh) 运行时（≥1.0）：
+| 依赖 | 版本要求 | 说明 |
+|---|---|---|
+| [Bun](https://bun.sh) | ≥ 1.0 | JavaScript/TypeScript 运行时 + 包管理器 + 打包器 |
+| Git | ≥ 2.0 | 克隆仓库 |
+| macOS / Linux / WSL2 | — | 支持任意 Unix-like 系统 |
+
+当前项目仅需 Bun，无需额外安装 Node.js、npm 或系统级编译工具链。
+
+#### 安装 Bun
+
+**macOS / Linux：**
 
 ```bash
 curl -fsSL https://bun.sh/install | bash
 ```
 
-### 克隆并构建
+**Windows（WSL2）：**
+
+在 WSL2 终端中执行同上命令。
+
+安装后重启终端，验证：
+
+```bash
+bun --version   # 应输出 ≥ 1.0
+```
+
+### 克隆仓库
 
 ```bash
 git clone https://github.com/your-org/cenum-code.git
 cd cenum-code
+```
+
+### 安装依赖
+
+```bash
 bun install
+```
+
+此命令读取 `package.json` 和 `bun.lock`，自动安装所有依赖到 `node_modules/`。核心依赖包括 `ink`、`react`、`commander`、`zod`、`diff` 等。
+
+### 编译构建
+
+```bash
 bun run build
 ```
+
+等价于 `bun build src/main.tsx --outdir dist --target bun`。Bun 原生打包，将 TypeScript 源码编译为单个 `dist/main.js`，无需额外配置 webpack/esbuild。构建产物约 2.3 MB（含 664 个模块）。
 
 ### 链接为全局命令（可选）
 
@@ -176,15 +210,108 @@ src/
     └── index.ts      # 类型定义
 ```
 
-## 开发
+## 开发者指南
+
+### 项目初始化
 
 ```bash
-# 开发模式（热重载）
-bun run dev
+# 1. 克隆仓库
+git clone https://github.com/your-org/cenum-code.git
+cd cenum-code
 
-# 构建
+# 2. 安装依赖（Bun）
+bun install
+
+# 3. 构建
 bun run build
-
-# 运行
-bun run start
 ```
+
+### 常用命令
+
+| 命令 | 说明 |
+|---|---|
+| `bun run dev` | 开发模式，源码热重载运行 |
+| `bun run build` | 编译构建，输出 `dist/main.js` |
+| `bun run start` | 运行构建产物 |
+| `bun run dist/main.js` | 直接运行（等同于 `bun run start`） |
+| `bun run dist/main.js -p "问题"` | 非交互单次执行 |
+| `bun run dist/main.js --setup` | 重新配置 API Key |
+
+### 开发模式详解
+
+```bash
+bun run dev
+```
+
+等价于 `bun run --hot src/main.tsx`。Bun 的 `--hot` 标志启用热重载：修改 `src/` 下任意 `.ts` / `.tsx` 文件后自动重启进程，无需手动重新构建。适合快速迭代调试。
+
+### 构建产物
+
+构建产物为单个自包含的 `dist/main.js`（约 2.3 MB），由 Bun 原生打包器生成，包含了所有 TS 源码和第三方依赖。可在安装了 Bun 的任意机器上直接运行，无需 `node_modules/`。
+
+```bash
+# 直接把 dist/main.js 复制到目标机器即可运行
+bun dist/main.js
+```
+
+### 项目架构
+
+```
+用户输入 → main.tsx (CLI 入口)
+              ↓
+         App.tsx (React/Ink 主组件)
+              ↓
+         engine/index.ts (agent 循环)
+              ↓
+         engine/api.ts (LLM API 流式调用)
+              ↓
+         tools/ (工具执行层)
+              ↓
+         Chat.tsx / MarkdownView.tsx (TUI 渲染)
+```
+
+**执行流程**：用户输入 → App 组件调用 `runQueryLoop` → 向 LLM 发起流式请求 → LLM 可能返回文本或工具调用 → 文本直接渲染，工具调用经权限确认后由对应工具模块执行 → 结果反馈给 LLM → 循环直到 LLM 返回纯文本。
+
+### 添加新工具
+
+在 `src/tools/` 下创建新文件，继承 `BaseTool`：
+
+```typescript
+// src/tools/http.ts
+import { z } from "zod";
+import { BaseTool } from "./base.js";
+
+export class HttpTool extends BaseTool {
+  name = "http_request";
+  description = "发起 HTTP 请求";
+  input_schema = z.object({
+    url: z.string(),
+    method: z.enum(["GET", "POST"]),
+  });
+  needsApproval = false;  // 是否需用户确认
+
+  async execute(args: Record<string, unknown>) {
+    const res = await fetch(args.url as string, { method: args.method as string });
+    const body = await res.text();
+    return this.ok(body.slice(0, 2000));
+  }
+}
+```
+
+然后在 `src/tools/index.ts` 中注册：
+
+```typescript
+import { HttpTool } from "./http.js";
+// ...
+const allTools = [new ReadTool(), ..., new HttpTool()];
+```
+
+### TypeScript 配置
+
+`tsconfig.json` 配置要点：
+
+- `target: "ESNext"` — 输出最新 ES 标准
+- `module: "ESNext"` — 使用 ESM 模块
+- `moduleResolution: "bundler"` — 适配 Bun 打包器
+- `jsx: "react-jsx"` — React 17+ 自动 JSX 转换
+- `strict: true` — 启用全部严格类型检查
