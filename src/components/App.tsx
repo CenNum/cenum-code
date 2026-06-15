@@ -8,6 +8,9 @@ import { loadConfig } from "../config.js";
 import { createSession, addMessage, replaceMessages, clearSession } from "../hooks/useSession.js";
 import { getSkillManager } from "../skills/manager.js";
 import type { Message, CenumConfig } from "../types/index.js";
+import { StatusBar } from "./StatusBar.js";
+import type { AgentStatus } from "./StatusBar.js";
+import { saveConfig, getConfigPath } from "../config.js";
 
 interface Props {
   initialPrompt?: string;
@@ -58,6 +61,9 @@ export const App: React.FC<Props> = ({ initialPrompt, config: _config }) => {
   const [disabled, setDisabled] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [confirmQuestion, setConfirmQuestion] = useState("");
+  const [status, setStatus] = useState<AgentStatus>("idle");
+  const [askBeforeWrite, setAskBeforeWrite] = useState(cfg.askBeforeWrite ?? true);
+  const [askBeforeBash, setAskBeforeBash] = useState(cfg.askBeforeBash ?? true);
   const confirmResolveRef = useRef<((v: boolean) => void) | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const processingRef = useRef(false);
@@ -68,6 +74,7 @@ export const App: React.FC<Props> = ({ initialPrompt, config: _config }) => {
       confirmResolveRef.current = resolve;
       setConfirmQuestion(question);
       setConfirming(true);
+      setStatus("confirming");
     });
   }, []);
 
@@ -77,7 +84,9 @@ export const App: React.FC<Props> = ({ initialPrompt, config: _config }) => {
     const resolve = confirmResolveRef.current;
     confirmResolveRef.current = null;
     if (resolve) resolve(approved);
-  }, []);
+    const thinking = isThinking;
+    setStatus(processingRef.current ? (thinking ? "thinking" : "executing") : "idle");
+  }, [isThinking]);
 
   // 统一斜杠命令路由：返回 { sync: 同步结果 } 或 { async: true } 表示需异步处理
   const routeSlashCommand = useCallback((text: string): { sync?: string; async?: string; cmd?: string } => {
@@ -104,6 +113,37 @@ export const App: React.FC<Props> = ({ initialPrompt, config: _config }) => {
 
       case "/exit":
         process.exit(0);
+
+      case "/setting": {
+        const sub = parts[1];
+        const val = parts[2];
+
+        if (!sub) {
+          return {
+            sync: `## 当前设置\n\n| 设置项 | 状态 | 说明 |\n|------|------|------|\n| \`askBeforeWrite\` | ${askBeforeWrite ? "开启" : "关闭"} | 编辑/写入文件前确认 |\n| \`askBeforeBash\` | ${askBeforeBash ? "开启" : "关闭"} | 执行命令前确认 |\n\n修改: \`/setting <项> on|off\``
+          };
+        }
+
+        if (!val || (val !== "on" && val !== "off")) {
+          return { sync: "用法: `/setting <askBeforeWrite|askBeforeBash> on|off`" };
+        }
+
+        const enabled = val === "on";
+
+        if (sub === "askBeforeWrite") {
+          setAskBeforeWrite(enabled);
+          const configPath = getConfigPath();
+          return { async: "setting", cmd: `askBeforeWrite|${enabled}|${configPath}` };
+        }
+
+        if (sub === "askBeforeBash") {
+          setAskBeforeBash(enabled);
+          const configPath = getConfigPath();
+          return { async: "setting", cmd: `askBeforeBash|${enabled}|${configPath}` };
+        }
+
+        return { sync: `未知设置项: ${sub}。可用: askBeforeWrite, askBeforeBash` };
+      }
 
       case "/skills": {
         // /skills 子命令处理
@@ -150,7 +190,7 @@ export const App: React.FC<Props> = ({ initialPrompt, config: _config }) => {
       default:
         return {};
     }
-  }, [skillMgr, skillsPrompt, cfg]);
+  }, [skillMgr, skillsPrompt, cfg, askBeforeWrite, askBeforeBash]);
 
   const addAssistantMsg = useCallback((content: string, userText: string) => {
     const userMsg: Message = { role: "user", content: userText };
@@ -213,6 +253,21 @@ export const App: React.FC<Props> = ({ initialPrompt, config: _config }) => {
         return;
       }
 
+      if (routed.async === "setting") {
+        const [key, valStr, configPath] = routed.cmd!.split("|");
+        const enabled = valStr === "true";
+        const label = key === "askBeforeWrite" ? "编辑/写入文件前确认" : "执行命令前确认";
+        addAssistantMsg(`${label}已**${enabled ? "开启" : "关闭"}**。`, text);
+        // 写入配置文件
+        try {
+          const content = await Bun.file(configPath).text();
+          const cfg = JSON.parse(content);
+          cfg[key] = enabled;
+          await Bun.write(configPath, JSON.stringify(cfg, null, 2));
+        } catch {}
+        return;
+      }
+
       // 未知命令 → 交给 LLM
     }
 
@@ -220,6 +275,7 @@ export const App: React.FC<Props> = ({ initialPrompt, config: _config }) => {
     processingRef.current = true;
     setDisabled(true);
     setIsThinking(true);
+    setStatus("thinking");
     setErrorMsg(undefined);
     setStreamingText("");
     setToolCalls([]);
@@ -251,6 +307,7 @@ export const App: React.FC<Props> = ({ initialPrompt, config: _config }) => {
           }
           tcList.push(tc);
           setToolCalls([...tcList]);
+          if (tcList.length === 1) setStatus("executing");
         },
         (finalMessages) => {
           replaceMessages(sessionRef.current.id, finalMessages);
@@ -260,6 +317,7 @@ export const App: React.FC<Props> = ({ initialPrompt, config: _config }) => {
           setToolCalls([]);
           setDisabled(false);
           processingRef.current = false;
+          setStatus("idle");
         },
         (err) => {
           setErrorMsg(err);
@@ -267,9 +325,13 @@ export const App: React.FC<Props> = ({ initialPrompt, config: _config }) => {
           setStreamingText("");
           setDisabled(false);
           processingRef.current = false;
+          setStatus("idle");
         },
         inkConfirmFn,
         controller.signal,
+        10,
+        askBeforeWrite,
+        askBeforeBash,
       );
     } catch (err: any) {
       if (err.name !== "AbortError") {
@@ -279,13 +341,15 @@ export const App: React.FC<Props> = ({ initialPrompt, config: _config }) => {
       setStreamingText("");
       setDisabled(false);
       processingRef.current = false;
+      setStatus("idle");
     }
-  }, [confirming, resolveConfirm, inkConfirmFn, routeSlashCommand, addAssistantMsg, skillMgr]);
+  }, [confirming, resolveConfirm, inkConfirmFn, routeSlashCommand, addAssistantMsg, skillMgr, status, askBeforeWrite, askBeforeBash]);
 
   if (initialPrompt) {
     handleSubmit(initialPrompt);
     return (
       <Box flexDirection="column" padding={1}>
+        <StatusBar status={status} />
         <Chat messages={messages} toolCalls={toolCalls} isThinking={isThinking} streamingText={streamingText} errorMsg={errorMsg} />
       </Box>
     );
@@ -293,6 +357,7 @@ export const App: React.FC<Props> = ({ initialPrompt, config: _config }) => {
 
   return (
     <Box flexDirection="column" padding={1} height="100%">
+      <StatusBar status={status} />
       <Box flexDirection="column" flexGrow={1}>
         {messages.length === 1 && messages[0].role === "system" ? (
           <Box flexDirection="column" marginY={1}>

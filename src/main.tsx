@@ -12,7 +12,7 @@ const program = new Command();
 program
   .name("cenum")
   .description("Cenum Code — 智能终端 AI 编程助手")
-  .version("0.2.0")
+  .version("0.3.0")
   .option("-p, --prompt <prompt>", "非交互式单次提问")
   .option("-s, --setup", "设置 API 配置")
   .option("-c, --config", "显示当前配置")

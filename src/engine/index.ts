@@ -15,11 +15,13 @@ export async function runQueryLoop(
   confirmFn: UserConfirmFn,
   signal?: AbortSignal,
   maxIter = 10,
+  askBeforeWrite?: boolean,
+  askBeforeBash?: boolean,
 ): Promise<void> {
   const allTools = getAllTools();
   const config: CenumConfig = loadConfig();
-  const askWrite = config.askBeforeWrite ?? true;
-  const askBash = config.askBeforeBash ?? true;
+  const askWrite = askBeforeWrite ?? config.askBeforeWrite ?? true;
+  const askBash = askBeforeBash ?? config.askBeforeBash ?? true;
 
   for (let iter = 0; iter < maxIter; iter++) {
     if (signal?.aborted) break;
