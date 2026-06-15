@@ -168,6 +168,7 @@ cenum --config
 | `grep` | 正则搜索文件内容 | 否 |
 | `glob` | 通配符匹配文件名 | 否 |
 | `list_files` | 列出目录结构 | 否 |
+| `use_skill` | 加载已安装技能 | 否 |
 
 确认行为可通过配置项 `askBeforeWrite` 和 `askBeforeBash` 控制。
 
