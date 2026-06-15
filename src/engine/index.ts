@@ -58,7 +58,7 @@ export async function runQueryLoop(
             const approved = await confirmFn(confirmMsg);
             if (!approved) {
               onToolCall({ name, args: formatArgs(args), status: "cancelled", description: `${name} 已取消` });
-              messages.push({ role: "assistant", content: result.content || `准备调用 ${name}` });
+              messages.push({ role: "assistant", content: result.content || "", tool_calls: [tc] });
               messages.push({ role: "tool", content: "用户取消了操作", tool_call_id: tc.id });
               onComplete(messages);
               return;
@@ -89,7 +89,7 @@ export async function runQueryLoop(
 
           messages.push({
             role: "assistant",
-            content: result.content || `调用工具: ${name}`,
+            content: result.content || "",
             tool_calls: [tc],
           });
           messages.push({ role: "tool", content: toolResult.content, tool_call_id: tc.id });
@@ -138,6 +138,8 @@ function buildDesc(name: string, args: Record<string, unknown>, done: boolean): 
       return `搜索 "${args.pattern}"${suffix}`;
     case "glob":
       return `查找 ${args.pattern}${suffix}`;
+    case "use_skill":
+      return `加载技能 ${args.skill_name}${suffix}`;
     default:
       return `${name}${suffix}`;
   }
@@ -145,8 +147,10 @@ function buildDesc(name: string, args: Record<string, unknown>, done: boolean): 
 
 function buildConfirmMsg(name: string, args: Record<string, unknown>): string {
   switch (name) {
-    case "bash":
-      return `确认执行命令? ${args.command}`;
+    case "bash": {
+      const cmd = (args.command as string || "").replace(/\n/g, " ").slice(0, 80);
+      return `确认执行命令? ${cmd}${(args.command as string)?.length > 80 ? "..." : ""}`;
+    }
     case "write_file":
       return `确认写入文件? ${shortPath(args.file_path as string)}`;
     case "edit_file":

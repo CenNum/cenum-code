@@ -13,19 +13,22 @@ export class BashTool extends BaseTool {
 
   async execute(args: Record<string, unknown>): Promise<{ content: string; isError?: boolean }> {
     const cmd = args.command as string;
-    const timeout = ((args.timeout as number) || 30) * 1000;
+    const timeoutMs = ((args.timeout as number) || 30) * 1000;
 
     try {
       const out = execSync(cmd, {
         encoding: "utf-8",
-        timeout,
+        timeout: timeoutMs,
         maxBuffer: 10 * 1024 * 1024,
         cwd: process.cwd(),
         env: process.env as Record<string, string>,
       });
       return this.ok(`\`\`\`\n$ ${cmd}\n${out.trim() || "(无输出)"}\n\`\`\``);
     } catch (err: any) {
-      return this.fail(`\`\`\`\n$ ${cmd}\n${(err.stderr || err.message || "").trim()}\n\`\`\``);
+      const msg = err.killed
+        ? `命令超时 (${timeoutMs / 1000}s): ${err.message || cmd}`
+        : (err.stderr || err.message || "").trim();
+      return this.fail(`\`\`\`\n$ ${cmd}\n${msg}\n\`\`\``);
     }
   }
 }
