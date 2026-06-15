@@ -1,6 +1,6 @@
 {
   "name": "cenum-code",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Cenum Code — 智能终端 AI 编程助手",
   "type": "module",
   "bin": {
