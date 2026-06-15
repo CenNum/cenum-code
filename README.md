@@ -171,6 +171,76 @@ cenum --config
 
 确认行为可通过配置项 `askBeforeWrite` 和 `askBeforeBash` 控制。
 
+## Skills（技能系统）
+
+Skills 是 Cenum Code 的插件扩展机制。每个 skill 是一组专业的提示词和工具约束，安装后会自动注入到 Agent 的 system prompt 中，让 AI 在特定领域表现更专业。
+
+### 管理命令
+
+使用斜杠命令 `/skills` 管理已安装的技能：
+
+| 命令 | 说明 |
+|---|---|
+| `/skills` 或 `/skills list` | 列出所有已安装技能及启用状态 |
+| `/skills install <git-url>` | 从 Git 仓库安装技能 |
+| `/skills remove <skill-name>` | 卸载指定技能 |
+| `/skills enable <skill-name>` | 启用已安装但被禁用的技能 |
+| `/skills disable <skill-name>` | 禁用技能（保留文件但不生效） |
+
+### 安装示例
+
+```bash
+# 在交互模式下执行（输入 / 可弹出命令补全）
+/skills install https://github.com/obra/superpowers
+```
+
+安装过程会自动 `git clone --depth 1` 到 `~/.cenum-code/skills/` 目录，并解析仓库中的所有 `SKILL.md` 文件。
+
+### 推荐的技能仓库
+
+| 仓库 | 说明 |
+|---|---|
+| [obra/superpowers](https://github.com/obra/superpowers) | 社区维护的通用技能合集，涵盖代码审查、测试生成、文档编写等 |
+
+### 工作原理
+
+```
+/skills install <url>
+       ↓
+git clone --depth 1 → ~/.cenum-code/skills/<repo>/
+       ↓
+递归扫描目录，解析每个 SKILL.md（YAML front matter + Markdown body）
+       ↓
+写入 skills.json 配置文件，记录名称、描述、启用状态
+       ↓
+下次启动时自动将已启用技能的 prompt 注入 system message
+```
+
+`SKILL.md` 格式基于 [superpowers](https://github.com/obra/superpowers) 规范：
+
+```markdown
+---
+name: code-reviewer
+description: 专业代码审查，分析代码质量、安全性和可维护性
+---
+
+你是一个资深代码审查专家。在审查代码时，请关注：
+1. 逻辑正确性和边界条件
+2. 安全漏洞（SQL 注入、XSS 等）
+3. 性能瓶颈
+...
+```
+
+### 自行编写 Skill
+
+在 `~/.cenum-code/skills/` 下创建目录，放入 `SKILL.md` 文件：
+
+```bash
+mkdir -p ~/.cenum-code/skills/my-skill
+```
+
+编辑 `~/.cenum-code/skills/my-skill/SKILL.md`，填入 front matter 和提示词正文。重启 Cenum Code 后即可在 `/skills list` 中看到。
+
 ## 技术栈
 
 | 层级 | 技术 |
